@@ -1,0 +1,88 @@
+diff --git a/pyfatfs/PyFat.py b/pyfatfs/PyFat.py
+index 87da38a..f7d78ba 100755
+--- a/pyfatfs/PyFat.py
++++ b/pyfatfs/PyFat.py
+@@ -323,6 +323,14 @@ class PyFat(object):
+         total_entries = int(fat_size // fat_entry_size)
+         self.fat = [None] * total_entries
+ 
++        bad_fat = fats[0]
++        out_fat = b""
++        for x in range(len(bad_fat) // 512):
++            start = x*512
++            out_fat += bad_fat[start+16:start+512]
++        out_fat += b"\x00" * (len(bad_fat) - len(out_fat))
++        fats[0] = out_fat
++
+         curr = 0
+         cluster = 0
+         incr = self.fat_type / 8
+@@ -631,7 +639,7 @@ class PyFat(object):
+             FATDirectoryEntry.FAT_DIRECTORY_HEADER_SIZE
+ 
+         # Parse all directory entries in root directory
+-        subdirs, _ = self.parse_dir_entries_in_address(root_dir_byte,
++        subdirs, _, __ = self.parse_dir_entries_in_address(root_dir_byte,
+                                                        root_dir_byte +
+                                                        max_bytes)
+         for dir_entry in subdirs:
+@@ -720,12 +728,15 @@ class PyFat(object):
+             max_address = FATDirectoryEntry.FAT_DIRECTORY_HEADER_SIZE
+ 
+         dir_entries = []
++        over = False
+ 
+         for hdr_addr in range(address, max_address, dir_hdr_size):
+             # Parse each entry
+             dir_hdr = self.__parse_dir_entry(hdr_addr)
+             dir_sn = EightDotThree(encoding=self.encoding)
+             dir_first_byte = dir_hdr["DIR_Name"][0]
++            if dir_first_byte == 0:
++                over = True
+             try:
+                 dir_sn.set_byte_name(dir_hdr["DIR_Name"])
+             except NotAFatEntryException as ex:
+@@ -769,7 +780,7 @@ class PyFat(object):
+             # Reset temporary LFN entry
+             tmp_lfn_entry = FATLongDirectoryEntry()
+ 
+-        return dir_entries, tmp_lfn_entry
++        return dir_entries, tmp_lfn_entry, over
+ 
+     def parse_dir_entries_in_cluster_chain(self, cluster) -> list:
+         """Parse directory entries while following given cluster chain."""
+@@ -782,8 +793,10 @@ class PyFat(object):
+             b = self.get_data_cluster_address(c)
+             ret = self.parse_dir_entries_in_address(b, b+max_bytes,
+                                                     tmp_lfn_entry)
+-            tmp_dir_entries, tmp_lfn_entry = ret
++            tmp_dir_entries, tmp_lfn_entry, over = ret
+             dir_entries += tmp_dir_entries
++            if over:
++                break
+ 
+         return dir_entries
+ 
+@@ -960,14 +973,14 @@ class PyFat(object):
+ 
+     def __verify_bpb_header(self):
+         """Verify BPB header for correctness."""
+-        if self.bpb_header["BS_jmpBoot"][0] == 0xEB:
+-            if self.bpb_header["BS_jmpBoot"][2] != 0x90:
+-                raise PyFATException("Boot code must end with 0x90")
+-        elif self.bpb_header["BS_jmpBoot"][0] == 0xE9:
+-            pass
+-        else:
+-            raise PyFATException("Boot code must start with 0xEB or "
+-                                 "0xE9. Is this a FAT partition?")
++        # if self.bpb_header["BS_jmpBoot"][0] == 0xEB:
++        #     if self.bpb_header["BS_jmpBoot"][2] != 0x90:
++        #         raise PyFATException("Boot code must end with 0x90")
++        # elif self.bpb_header["BS_jmpBoot"][0] == 0xE9:
++        #     pass
++        # else:
++        #     raise PyFATException("Boot code must start with 0xEB or "
++        #                          "0xE9. Is this a FAT partition?")
+ 
+         #: 512,1024,2048,4096: As per fatgen103.doc
+         byts_per_sec_range = [2**x for x in range(9, 13)]
