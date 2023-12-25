@@ -263,7 +263,7 @@ int main(int argc, char *argv[]) {
     ret = STL_Open(0, partnum, &info);
     printf("STL_Open: %d\n", ret);
 
-    FILE *outf = fopen("output.bin", "wb");
+    FILE *outf = fopen(argv[4], "wb");
 
     for (int i = 0; ; ++i) {
         memset(buf, 0xFF, sizeof(buf));
