@@ -1,5 +1,11 @@
 # xsr2
 
+## Environment
+
+```
+sudo apt install gcc-arm-linux-gnueabi qemu qemu-user-static qemu-system-arm
+```
+
 ## Build
 
 ```
