@@ -1,0 +1,24 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: install tools
+      run: |
+        apt update
+        apt install gcc-arm-linux-gnueabi qemu qemu-user-static qemu-system-arm
+    - name: make xsr2
+      run: |
+        cd xsr2
+        arm-linux-gnueabi-gcc xsr_stl.ko main.c -o main
+
