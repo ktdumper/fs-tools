@@ -28,7 +28,7 @@ jobs:
     - name: make fsr_ll
       run: |
         cd fsr_ll
-        arm-linux-gnueabi-gcc fsr.ko main.c -o main
+        arm-linux-gnueabi-gcc fsr.ko fsr_stl.ko main.c -o main
     - name: Upload FSR
       uses: actions/upload-artifact@master
       with:
