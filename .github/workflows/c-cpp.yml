@@ -8,7 +8,6 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -21,15 +20,15 @@ jobs:
       run: |
         cd xsr2
         arm-linux-gnueabi-gcc xsr_stl.ko main.c -o main
-    - name: make fsr_ll
-      run: |
-        cd fsr_ll
-        arm-linux-gnueabi-gcc fsr_stl.ko main.c -o main
     - name: Upload XSR
       uses: actions/upload-artifact@master
       with:
         name: XSR
         path: xsr2/main
+    - name: make fsr_ll
+      run: |
+        cd fsr_ll
+        arm-linux-gnueabi-gcc fsr.ko main.c -o main
     - name: Upload FSR
       uses: actions/upload-artifact@master
       with:
