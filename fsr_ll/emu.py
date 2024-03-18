@@ -120,7 +120,7 @@ onenand = Onenand()
 
 
 if __name__ == "__main__":
-    ql = Qiling([r'main'], "arm-linux-gnueabi")
+    ql = Qiling([r'main'], ".")
 
     def cb_read(ql, offset, size):
         return onenand.read_reg(offset, size)
