@@ -1,0 +1,36 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: install tools
+      run: |
+        sudo apt update
+        sudo apt install gcc-arm-linux-gnueabi qemu qemu-user-static qemu-system-arm
+    - name: make xsr2
+      run: |
+        cd xsr2
+        arm-linux-gnueabi-gcc xsr_stl.ko main.c -o main
+    - name: Upload XSR
+      uses: actions/upload-artifact@master
+      with:
+        name: XSR
+        path: xsr2/main
+    - name: make fsr_ll
+      run: |
+        cd fsr_ll
+        arm-linux-gnueabi-gcc fsr.ko fsr_stl.ko main.c -o main
+    - name: Upload FSR
+      uses: actions/upload-artifact@master
+      with:
+        name: FSR
+        path: fsr_ll/main
