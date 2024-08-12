@@ -24,6 +24,11 @@ class Onenand:
         self.vid = 0x41
         self.syscfg1 = 0xE6C4
 
+        # setup for SLC
+        self.pages_per_block = 64
+        self.page_size = 4096
+        self.spare_size = 128
+
         self.start_addr_1 = 0
         self.start_addr_2 = 0
         self.start_addr_8 = 0
@@ -31,8 +36,11 @@ class Onenand:
         self.start_buf_reg = 0
 
         self.int = 0
-        self.dataram = bytearray(0x1000)
-        self.spareram = bytearray(128)
+        self.dataram = bytearray(self.page_size)
+        self.spareram = bytearray(self.spare_size)
+
+        self.override_page = dict()
+        self.override_spare = dict()
 
     def _read(self):
         # regular read
@@ -45,12 +53,17 @@ class Onenand:
         if self.start_addr_2 != 0:
             abort()
 
-        off = self.start_addr_1 * 64 * 4096 + (self.start_addr_8 >> 2) * 4096
-        # print("-- flash offset 0x{:X}".format(off))
-        onenand_bin.seek(off)
-        self.dataram = bytearray(onenand_bin.read(4096))
-        onenand_oob.seek(off // 512 * 16)
-        self.spareram = onenand_oob.read(128)
+        page_in_block = self.start_addr_8 >> 2
+        if (self.start_addr_1, self.start_addr_8) in self.override_page:
+            self.dataram = bytearray(self.override_page[(self.start_addr_1, page_in_block)])
+            self.spareram = bytearray(self.override_spare[(self.start_addr_1, page_in_block)])
+        else:
+            off = (self.start_addr_1 * self.pages_per_block + page_in_block) * self.page_size
+            # print("-- flash offset 0x{:X}".format(off))
+            onenand_bin.seek(off)
+            self.dataram = bytearray(onenand_bin.read(self.page_size))
+            onenand_oob.seek(off // 512 * 16)
+            self.spareram = bytearray(onenand_oob.read(self.spare_size))
 
     def read_reg(self, offset, size):
         # if offset >= 0x404 and offset < 0x1400:
@@ -114,11 +127,32 @@ class Onenand:
             elif value == 0x23:
                 # Unlock NAND array a block
                 self.int = 0x8004
+            elif value == 0x94:
+                # Erase block
+                print("=> Erase block 0x{:X}".format(self.start_addr_1))
+                for x in range(self.pages_per_block):
+                    self.override_page[(self.start_addr_1, x)] = b"\xFF" * self.page_size
+                    self.override_spare[(self.start_addr_1, x)] = b"\xFF" * self.spare_size
+                self.int = 0xFFFF
+            elif value == 0x80:
+                # Program page
+                assert self.start_addr_8 % 4 == 0
+                page_in_block = self.start_addr_8 // 4
+                print("=> Program page 0x{:X}:0x{:X}".format(self.start_addr_1, page_in_block))
+                self.override_page[(self.start_addr_1, page_in_block)] = self.dataram
+                self.override_spare[(self.start_addr_1, page_in_block)] = self.spareram
+                self.int = 0xFFFF
             else:
+                print("UNKNOWN CMD REG value=0x{:X}".format(offset, value))
                 abort()
-        elif offset >= 0x400 and offset < 0x1400 and size == 4:
-            self.dataram[offset-0x400:offset-0x400+4] = struct.pack("<I", value)
+        elif offset >= 0x400 and offset < 0x1400:
+            bins = value.to_bytes(size, byteorder="little")
+            self.dataram[offset-0x400:offset-0x400+len(bins)] = bins
+        elif offset >= 0x10020 and offset < 0x100A0:
+            bins = value.to_bytes(size, byteorder="little")
+            self.spareram[offset-0x10020:offset-0x10020+len(bins)] = bins
         else:
+            print("UNKNOWN offset=0x{:X} size=0x{:X}".format(offset, size))
             abort()
 
 
