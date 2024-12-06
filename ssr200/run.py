@@ -25,4 +25,5 @@ if __name__ == "__main__":
         dir_name = re.sub(r"\.bin$", "",os.path.basename(path))
         extract.extractfat(path, os.path.join(out_dir, dir_name))
         
-    print(f"\nProcessing completed! Output => {out_dir}")
+    print(f"\nProcessing completed!")
+    print(f"Output => {out_dir}")
