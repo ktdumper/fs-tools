@@ -2,6 +2,8 @@ import sys
 import os
 import glob
 import re
+import traceback
+
 import convert_ssr200
 import extract
 import carve_msdos50_fat
@@ -22,8 +24,13 @@ if __name__ == "__main__":
 
     print("\nStart extracting FATs.")
     for path in glob.glob(os.path.join(glob.escape(out_dir), "*.bin")):
-        dir_name = re.sub(r"\.bin$", "",os.path.basename(path))
-        extract.extractfat(path, os.path.join(out_dir, dir_name))
+        try:
+            dir_name = re.sub(r"\.bin$", "",os.path.basename(path))
+            extract.extractfat(path, os.path.join(out_dir, dir_name))
+            print("Success!")
+        except Exception as e:
+            print(traceback.format_exc())
+            print("Failure.")
         
     print(f"\nProcessing completed!")
     print(f"Output => {out_dir}")
