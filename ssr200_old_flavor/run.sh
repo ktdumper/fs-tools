@@ -25,8 +25,7 @@ echo "Started extracting FATs."
 for fat in "$outputdir"/*.bin; do
     [ -e "$fat" ] || continue
     echo "Processing: $fat"
-    tsk_recover -f fat16 -a "$fat" "${fat}_output"
-    tsk_recover -f fat16 "$fat" "${fat}_output"
+    tsk_recover -f fat16 -e "$fat" "${fat}_output"
 done
 echo
 
