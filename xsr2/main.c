@@ -22,7 +22,9 @@ void OAM_Debug(const char *fmt, ...) {
 }
 
 void *OAM_Malloc(size_t sz) {
-    return malloc(sz);
+    void *ptr = malloc(sz);
+    memset(ptr, 0, sz);
+    return ptr;
 }
 
 void OAM_Free(void *ptr) {
