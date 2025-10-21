@@ -15,27 +15,27 @@ def main():
     matched = set()
 
     fat = bytearray(0x200 * 0x10000)
-    for block in range(len(oob) // 16):
-        part = oob[block*16:(block+1)*16]
+    for sector in range(len(oob) // 16):
+        part = oob[sector * 16 : (sector+1) * 16]
+        
+        # SSR200 sectors are always two sectors in a row.
+        if (flash[sector * 0x200 : sector * 0x200 + 8] == b"SSR200\x00\x00" or 
+            flash[(sector-1) * 0x200 : (sector-1) * 0x200 + 8] == b"SSR200\x00\x00"
+        ):
+            continue
 
         if part[0] == 0x00:
-            #assert part[0:4] == b"\x00\x00\x00\x00"
+            continue
+            
+        if part[1:4] == b"\xFF" * 3:
             continue
 
-        if part[0:8] == b"\xFF" * 8:
-            continue
-
-        if part[0:4] == part[4:8]:
-             #assert part[0] in [0xFE, 0xFC, 0xF8]
-             pass
-
-        if part[0x0C:0x10] != b"\xFF"*4:
-            sector = struct.unpack_from("<I", part)[0]
-            sector = sector >> 8
-            assert sector not in matched
-            if sector in matched: print(f"WARN: (sector number: {hex(sector)}, oob offset: {hex(block)})")
-            matched.add(sector)
-            fat[0x200*sector:0x200*(sector+1)] = flash[0x200*block:0x200*(block+1)]
+        sector_id = struct.unpack_from("<I", part)[0]
+        sector_id = sector_id >> 8
+        if sector_id in matched:
+            print(f"WARN: LSN Duplication (sector number: {hex(sector_id)}, oob offset: {hex(sector * 10)})")
+        matched.add(sector_id)
+        fat[sector_id * 0x200 : (sector_id+1) * 0x200] = flash[sector * 0x200 : (sector+1) * 0x200]
 
     with open(sys.argv[3], "wb") as outf:
         outf.write(fat)
