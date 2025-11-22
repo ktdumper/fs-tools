@@ -269,7 +269,7 @@ def get_fat_offsets(bpb: dict) -> list:
     return fat_offsets
 
 def main():
-    parser = argparse.ArgumentParser(description="Carve apps for F504iS")
+    parser = argparse.ArgumentParser(description="Standardize NEC's customized FAT file system")
     parser.add_argument("input")
     parser.add_argument("output")
     parser.add_argument(
