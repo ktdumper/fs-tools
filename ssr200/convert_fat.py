@@ -1,7 +1,49 @@
-import sys
 import struct
 import argparse
+import os
  
+def convert_fat_image(input: str, output: str, enable_normalize: bool) -> None:
+    with open(input, "rb") as inf:
+        image = bytearray(inf.read())
+
+    bpb = parse_fat16_bpb(image[0 : 0x200])
+    print("BPB Infomation:", bpb)
+
+    # Overwrite BS_jmpBoot
+    image[0 : 2] = b"\xEB\x3C"
+
+    # Overwrite BS_VolLab
+    image[0x2B : 0x36] = b"NO NAME    "
+
+    root_dir_start = (bpb["BPB_RsvdSecCnt"] + bpb["BPB_NumFATs"] * bpb["BPB_FATSz16"]) * bpb["BPB_BytsPerSec"]
+    root_dir_end = root_dir_start + (bpb["BPB_RootEntCnt"] * 32)
+    print(f"Root Directory Offset: {hex(root_dir_start)} - {hex(root_dir_end)}")
+    print(f"Cluster Offset Calculation Formula: {cluster_to_offset(bpb, 2)} + (c - 2) * {bpb['BPB_BytsPerSec'] * bpb['BPB_SecPerClus']}")
+    
+    if enable_normalize:
+        image[root_dir_start : root_dir_end] = remove_duplicate_entries(image[root_dir_start : root_dir_end])
+
+    fat_offsets = get_fat_offsets(bpb)
+
+    for i, (start, end) in enumerate(fat_offsets):
+        print(f"\n===== FAT {i} (offset: {hex(start)}) =====")
+
+        try:
+            image[start : end] = remove_checksum(image[start : end])
+        except ValueError:
+            print(f"There is no checksum header at {hex(start)}, skipping.")
+
+        dir_first_clusters = collect_dir_first_clusters(image, image[root_dir_start : root_dir_end], image[start : end], bpb)
+
+        if enable_normalize:
+            image[start : end] = normalize_fat(image[start : end], dir_first_clusters)
+
+        if i == 0:
+            image = fix_invalid_direntry(image, image[start : end], dir_first_clusters, bpb, root_dir_start, root_dir_end)
+
+    with open(output, "wb") as outf:
+        outf.write(image)
+
 def remove_checksum(fat: bytes) -> bytes:
     """Remove the 0x10 header every 0x200 bytes within the FAT area."""
     ret = b""
@@ -72,26 +114,62 @@ def remove_duplicate_entries(root_dir: bytes) -> bytes:
     return ret
 
 
-def remove_invalid_field(image: bytes, fat: bytes, dir_first_clusters: list, bpb: dict, root_dir_start: int, root_dir_end: int) -> bytearray:
-    """Overwrite DIR_NTRes, DIR_CrtTimeTenth, and DIR_CrtTime of all entries to 00."""
+def fix_invalid_direntry(image: bytes, fat: bytes, dir_first_clusters: list, bpb: dict, root_dir_start: int, root_dir_end: int) -> bytearray:
+    """Fix invalid fields from directory entries across the entire image."""
     ret = bytearray(image)
 
+    def _valid_time(data: bytes) -> bool:
+        w = int.from_bytes(data, "little")
+        hour = (w >> 11) & 0x1F
+        minute = (w >> 5) & 0x3F
+        sec2 = w & 0x1F  # seconds/2
+        return (0 <= hour <= 23) and (0 <= minute <= 59) and (0 <= sec2 <= 29)
 
-    def overwrite_field(entry: bytes) -> bytearray:
+    def _valid_date(data: bytes) -> bool:
+        def is_leap(y: int) -> bool:
+            return (y % 4 == 0 and y % 100 != 0) or (y % 400 == 0)
+        
+        if data == b"\x00\x00":
+            return False
+        
+        w = int.from_bytes(data, "little")
+        year_off = (w >> 9) & 0x7F  # 7 bits
+        month = (w >> 5) & 0x0F
+        day = w & 0x1F
+        if not (0 <= year_off <= 127):
+            return False
+        if not (1 <= month <= 12):
+            return False
+        if not (1 <= day <= 31):
+            return False
+        year = 1980 + year_off
+        mdays = [31, 29 if is_leap(year) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        return day <= mdays[month - 1]
+
+    def _overwrite_field(entry: bytes) -> bytearray:
         if len(entry) != 0x20:
             raise ValueError("The entry size is not 0x20.")
         
         _entry = bytearray(entry)
         
+        # LFN
         if entry[0xB] == 0x0F:
             return _entry
         
-        _entry[0xC : 0x16] = b"\x00" * 0xA
+        # Empty
+        if entry == b"\x00" * 0x20:
+            return _entry
+
+        # DIR_NTRes, DIR_CrtTimeTenth, DIR_CrtTime, DIR_CrtDate, DIR_LstAccDate, DIR_FstClusHI to 00
+        _entry[0xC : 0x16] = b"\x00" * 0xA 
+
+        if not (_valid_time(_entry[0x16 : 0x18]) and _valid_date(_entry[0x18 : 0x1A])):
+            _entry[0x16 : 0x1A] = b"\x00\x00\x21\x28" # time=00:00:00, date=2000-01-01
 
         return _entry
 
     for off in range(root_dir_start, root_dir_end, 0x20):
-        ret[off + 0 : off + 0x20] = overwrite_field(ret[off + 0 : off + 0x20])
+        ret[off + 0 : off + 0x20] = _overwrite_field(ret[off + 0 : off + 0x20])
 
     for c1 in dir_first_clusters:
         try:
@@ -107,7 +185,7 @@ def remove_invalid_field(image: bytes, fat: bytes, dir_first_clusters: list, bpb
             cluster_start = cluster_to_offset(bpb, c2) 
             cluster_end = cluster_to_offset(bpb, c2+1)
             for off in range(cluster_start, cluster_end, 0x20):
-                ret[off + 0 : off + 0x20] = overwrite_field(ret[off + 0 : off + 0x20])
+                ret[off + 0 : off + 0x20] = _overwrite_field(ret[off + 0 : off + 0x20])
     return ret
 
 def is_dir_entry(entry: bytes) -> bool:
@@ -269,8 +347,12 @@ def get_fat_offsets(bpb: dict) -> list:
     return fat_offsets
 
 def main():
-    parser = argparse.ArgumentParser(description="Standardize NEC's customized FAT file system")
-    parser.add_argument("input")
+    parser = argparse.ArgumentParser(description="Carve apps for F504iS")
+    parser.add_argument(
+        "input",
+        help="The argument can be either a file or a folder. If a file is provided, it will be processed individually."
+             "If a folder is provided, the function will process all the files within the folder."
+    )
     parser.add_argument("output")
     parser.add_argument(
         "-dn", "--disable-normalize", action="store_true",
@@ -279,46 +361,18 @@ def main():
     args = parser.parse_args()
     enable_normalize = not args.disable_normalize
 
-    with open(args.input, "rb") as inf:
-        image = bytearray(inf.read())
-
-    bpb = parse_fat16_bpb(image[0 : 0x200])
-    print("BPB Infomation:", bpb)
-
-    # Overwrite BS_jmpBoot
-    image[0 : 2] = b"\xEB\x3C"
-
-    # Overwrite BS_VolLab
-    image[0x2B : 0x36] = b"NO NAME    "
-
-    root_dir_start = (bpb["BPB_RsvdSecCnt"] + bpb["BPB_NumFATs"] * bpb["BPB_FATSz16"]) * bpb["BPB_BytsPerSec"]
-    root_dir_end = root_dir_start + (bpb["BPB_RootEntCnt"] * 32)
-    print(f"Root Directory Offset: {hex(root_dir_start)} - {hex(root_dir_end)}")
-    print(f"Cluster Offset Calculation Formula: {cluster_to_offset(bpb, 2)} + (c - 2) * {bpb['BPB_BytsPerSec'] * bpb['BPB_SecPerClus']}")
-    
-    if enable_normalize:
-        image[root_dir_start : root_dir_end] = remove_duplicate_entries(image[root_dir_start : root_dir_end])
-
-    fat_offsets = get_fat_offsets(bpb)
-
-    for i, (start, end) in enumerate(fat_offsets):
-        print(f"\n===== FAT {i} (offset: {hex(start)}) =====")
-
-        try:
-            image[start : end] = remove_checksum(image[start : end])
-        except ValueError:
-            print(f"There is no checksum header at {hex(start)}, skipping.")
-
-        dir_first_clusters = collect_dir_first_clusters(image, image[root_dir_start : root_dir_end], image[start : end], bpb)
-
-        if enable_normalize:
-            image[start : end] = normalize_fat(image[start : end], dir_first_clusters)
-
-        if i == 0:
-            image = remove_invalid_field(image, image[start : end], dir_first_clusters, bpb, root_dir_start, root_dir_end)
-
-    with open(args.output, "wb") as outf:
-        outf.write(image)
+    if os.path.isfile(args.input):
+        convert_fat_image(args.input, args.output, enable_normalize)
+    else:
+        in_files = [os.path.join(args.input, f) for f in os.listdir(args.input) if os.path.isfile(os.path.join(args.input, f))]
+        out_dir = args.output
+        os.makedirs(out_dir, exist_ok=True)
+        for in_file in in_files:
+            (filename, ext) = os.path.splitext(os.path.basename(in_file))
+            if ext == "":
+                ext = ".bin"
+            out_file = os.path.join(out_dir, f"{filename}_normalized{ext}")
+            convert_fat_image(in_file, out_file, enable_normalize)
 
 if __name__ == "__main__":
     main()
