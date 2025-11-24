@@ -178,12 +178,10 @@ def fix_invalid_direntry(image: bytes, fat: bytes, dir_first_clusters: list, bpb
             print("Skip due to invalid cluster chain:", e)
             continue
 
-        # Remove the odd numbers
-        filtered = cluster_chain[0:-1:2]
-
-        for c2 in filtered:
+        for c2 in cluster_chain[:-1]:
             cluster_start = cluster_to_offset(bpb, c2) 
             cluster_end = cluster_to_offset(bpb, c2+1)
+            
             for off in range(cluster_start, cluster_end, 0x20):
                 ret[off + 0 : off + 0x20] = _overwrite_field(ret[off + 0 : off + 0x20])
     return ret
@@ -249,7 +247,10 @@ def get_cluster_chain(fat: bytes, first_cluster: int) -> list:
     cur_entry = first_cluster
     while True:
         if cur_entry == 0:
-            raise ValueError("The cluster chain contains a zero.")
+            raise ValueError("The cluster chain contains a free cluster (0x0000).")
+        
+        if cur_entry == 0xFFF7:
+            raise ValueError("The cluster chain contains a bad cluster (0xFFF7).")
         
         if cur_entry < 0xFFF8 and cur_entry*2 + 2 > len(fat):
             raise ValueError("Cluster chain outside the FAT range.")
