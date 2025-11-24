@@ -3,19 +3,25 @@ name: C/C++ CI
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - 'xsr2/**'
+      - 'fsr_ll/**'
   pull_request:
     branches: [ "main" ]
+    paths:
+      - 'xsr2/**'
+      - 'fsr_ll/**'
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v3
     - name: install tools
       run: |
         sudo apt update
-        sudo apt install gcc-arm-linux-gnueabi qemu qemu-user-static qemu-system-arm
+        sudo apt install gcc-arm-linux-gnueabi qemu-user-static qemu-system-arm
     - name: make xsr2
       run: |
         cd xsr2
