@@ -10,13 +10,13 @@ pip3 install unicorn
 
 ## Usage
 
-First, place `onenand.bin` and `onenand.oob` in this folder.
+Pass path of dump's onenand.bin, onenand_slc.bin or onenand_mlc.bin as first arg
 
+Optional second arg can be provided for using a different bootloader (addresses may be needed to be added)
+
+Extracted partitions will be saved in the same folder as the dump file with _part_XX appended
 
 ```
-python3 emu.py 14 part_14.bin
-python3 emu.py 15 part_15.bin
-python3 emu.py 19 part_19.bin
-python3 emu.py 1A part_1A.bin
+python3 emu.py path/to/onenand.bin
 ```
 
